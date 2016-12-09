@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Mous.e</string>
+    <string name="calibrationtexttop">Point your phone at the <b>top</b> of screen and press calibrate</string>
+    <string name="calibrationtextbottom">Point your phone at the <b>bottom</b> of screen and press calibrate</string>
+    <string name="calibrationtextleft">Point your phone at the <b>left</b> of screen and press calibrate</string>
+    <string name="calibrationtextright">Point your phone at the <b>right</b> of screen and press calibrate</string>
 </resources>

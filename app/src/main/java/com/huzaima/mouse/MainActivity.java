@@ -1,58 +1,38 @@
 package com.huzaima.mouse;
 
-import android.app.Activity;
 import android.content.Context;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.os.AsyncTask;
 import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.widget.TextView;
+import android.view.MotionEvent;
+import android.view.View;
+import android.widget.ImageView;
+
+import com.dd.processbutton.iml.ActionProcessButton;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
-import java.util.LinkedList;
-import java.util.Queue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 
-public class MainActivity extends Activity implements SensorEventListener {
-
+public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
     boolean connected = false;
     private SensorManager senSensorManager;
     private Sensor senRotation;
-    PrintWriter out = null;
-    TextView tv ;
-    float mid, up, down, left, right;
-    double sensitivity = 4.3;
-    boolean greaterToTheRight = false;
-    boolean greaterToTheTop = false;
-
-    Queue originalX = new LinkedList();
-    Queue originalY = new LinkedList();
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-
-        Log.i("MID  = ",""+mid);
-        Log.i("UP = ",""+up);
-        Log.i("DOWN = ",""+down);
-        Log.i("LEFT = ",""+left);
-        Log.i("RIGHT = ",""+right);
-
-
-        DataTransferThread ct = new DataTransferThread();
-        registerTheListener();
-        ct.execute();
-
-        if(right > mid){greaterToTheRight = true;}
-        if(up > down ){greaterToTheTop = true;}
-    }
+    PrintWriter cursorOut, leftClickOut, rightClickOut, swipeOut = null;
+    ImageView swipeView;
+    ActionProcessButton leftClick, rightClick;
+    BlockingQueue leftClickQueue = new LinkedBlockingQueue();
+    BlockingQueue rightClickQueue = new LinkedBlockingQueue();
+    BlockingQueue swipeQueue = new LinkedBlockingQueue();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,170 +41,137 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         senSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         senRotation = senSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        leftClick = (ActionProcessButton) findViewById(R.id.left_click);
+        rightClick = (ActionProcessButton) findViewById(R.id.right_click);
+        swipeView = (ImageView) findViewById(R.id.swipeView);
 
+        leftClick.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
 
-        mid = getIntent().getFloatExtra("MID", (float) 0.0);
-        up = getIntent().getFloatExtra("UP", (float) 0.0);
-        down = getIntent().getFloatExtra("DOWN", (float) 0.0);
-        left = getIntent().getFloatExtra("LEFT", (float) 0.0);
-        right = getIntent().getFloatExtra("RIGHT", (float) 0.0);
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    leftClickQueue.add("LC");
+                }
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    leftClickQueue.add("LCR");
+                }
+                return false;
+            }
+        });
 
-        mid     *=10000;
-        up      *=10000;
-        down    *=10000;
-        left    *=10000;
-        right   *=10000;
+        rightClick.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
 
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    rightClickQueue.add("RC");
+                }
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    rightClickQueue.add("RCR");
+                }
+                return false;
+            }
+        });
 
+        swipeView.setOnTouchListener(new View.OnTouchListener() {
+
+            float startX, startY;
+            float currX, currY;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    startY = event.getY();
+                }
+
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    startY = 0;
+                }
+
+                if (event.getAction() == MotionEvent.ACTION_MOVE) {
+                    currY = startY - event.getY();
+                    startY = event.getY();
+                    swipeQueue.add(currY);
+                }
+                return true;
+            }
+        });
     }
 
     @Override
-    public void onSensorChanged(SensorEvent event) {
+    protected void onResume() {
+        super.onResume();
+        senSensorManager.registerListener(this, senRotation, SensorManager.SENSOR_DELAY_GAME);
 
-        Sensor mySensor = event.sensor;
+        try {
+            cursorOut = new PrintWriter(new BufferedWriter(new OutputStreamWriter(SocketHandler.getCursorSocket().getOutputStream())), true);
+            leftClickOut = new PrintWriter(new BufferedWriter(new OutputStreamWriter(SocketHandler.getLeftClickSocket().getOutputStream())), true);
+            rightClickOut = new PrintWriter(new BufferedWriter(new OutputStreamWriter(SocketHandler.getRightClickSocket().getOutputStream())), true);
+            swipeOut = new PrintWriter(new BufferedWriter(new OutputStreamWriter(SocketHandler.getSwipeSocket().getOutputStream())), true);
 
-        if (mySensor.getType() == Sensor.TYPE_ROTATION_VECTOR) {
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
-                Log.i("in while","Adding ");
-                originalX.add(event.values);
+        Log.i("onResume", "Successfully created Out object");
 
-
-        }//If sensor
-
-
+        registerTheListener();
+        clickThread(leftClickOut, leftClickQueue);
+        clickThread(rightClickOut, rightClickQueue);
+        clickThread(swipeOut, swipeQueue);
     }
 
-    public class DataTransferThread extends AsyncTask {
+    void clickThread(final PrintWriter outSocket, final BlockingQueue queue) {
 
+        new Thread(new Runnable() {
+            public void run() {
 
-        @Override
-        protected Object doInBackground(Object[] params) {
-
-            Log.i("In DO in background"," ok");
-
-
-            float[] event_values;
-            float mx,yx;
-            boolean flag = true;
-
-            try {
-                out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(SocketHandler.getSocket().getOutputStream())), true);
-            } catch (IOException e) {
-                e.printStackTrace();
+                while (true) {
+                    try {
+                        outSocket.println(queue.take());
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
             }
-
-            while(flag) {
-
-
-                if (originalX.size() > 0) {
-
-                    Log.i("in While","If true");
-
-                    event_values = (float[]) originalX.remove();
-
-                    mx = event_values[2];
-                    mx *= 10000;
-
-                    yx = event_values[0];
-                    yx *= 10000;
-
-                    String output;
-
-                    if (mx > mid) {
-                        if (greaterToTheRight) {
-                            mx = (float) (mx / sensitivity);
-  //                          out.println(mx);
-                            output = Float.toString(mx);
-                        }//If Greater to the Right
-                        else {
-                            mx = (float) (mx / sensitivity);
-                            mx *= -1;
-//                            out.println(mx);
-                            output = Float.toString(mx);
-                        }//Else greater to the left
-                    }//if Z > midMean
-                    else {
-                        if (greaterToTheRight) {
-                            mx = (float) (mx / sensitivity);
-  //                          out.println(mx);
-                            output = Float.toString(mx);
-
-                        } else {
-                            mx = (float) (mx / sensitivity);
-                            mx *= -1;
-//                            out.println(mx);
-                            output = Float.toString(mx);
-
-                        }// greater to the right
-
-                    }//Z < Mean
-
-                    if (yx > mid) {
-                        if (greaterToTheRight) {
-                            yx = (float) (yx / sensitivity);
-                            //out.println(yx);
-                            output = output+"^"+Float.toString(yx);
-                        }//If Greater to the Right
-                        else {
-                            yx = (float) (yx / sensitivity);
-                            yx *= -1;
-                            output = output+"^"+Float.toString(yx);
-
-                            //out.println(yx);
-                        }//Else greater to the left
-                    }//if Z > midMean
-                    else {
-                        if (greaterToTheRight) {
-                            yx = (float) (yx / sensitivity);
-                            output = output+"^"+Float.toString(yx);
-
-                            //out.println(mx);
-                        } else {
-                            yx = (float) (yx / sensitivity);
-                            yx *= -1;
-                            output = output+"^"+Float.toString(yx);
-                            //out.println(mx);
-                        }// greater to the right
-
-                    }//Z < Mean
-
-                    out.println(output);
-                    out.flush();
-
-                }//of Size >0
-
-            }//while
-
-
-
-                return null;
-        }//DoInBackground
-
-        @Override
-        protected void onPostExecute(Object o) {
-            super.onPostExecute(o);
-
-            Log.i("InPostExecute", " ok");
-        }
-    }//ConnectionThread
-
-
-    public void registerTheListener(){
-        senSensorManager.registerListener(this, senRotation, SensorManager.SENSOR_DELAY_FASTEST);
+        }).start();
     }
 
     @Override
     protected void onPause() {
-        Log.i("In","OnPuase");
         super.onPause();
-        if(connected)
-            senSensorManager.unregisterListener(this);
+        senSensorManager.unregisterListener(this);
     }
+
+    float filtered[];
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+
+        filtered = lowPassFilter(event.values, filtered);
+        cursorOut.println(filtered[0] * 1000 + " " + filtered[2] * 1000);
+        cursorOut.flush();
+
+    }//OnSensorChanged
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
 
     }
 
+    public void registerTheListener() {
+        senSensorManager.registerListener(this, senRotation, SensorManager.SENSOR_DELAY_FASTEST);
+    }
 
-}//main Activity
+    private static final float ALPHA = 0.25f;
+
+    private float[] lowPassFilter(float[] input, float[] output) {
+        if (output == null) return input;
+
+        for (int i = 0; i < input.length; i++) {
+            output[i] = output[i] + ALPHA * (input[i] - output[i]);
+        }
+        return output;
+    }//LowPassFilter
+}

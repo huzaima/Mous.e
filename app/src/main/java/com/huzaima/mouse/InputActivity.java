@@ -1,53 +1,34 @@
 package com.huzaima.mouse;
 
-import android.annotation.TargetApi;
 import android.content.Intent;
 import android.os.AsyncTask;
-import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
 import android.support.v7.app.AppCompatActivity;
-import android.transition.Slide;
-import android.transition.TransitionInflater;
 import android.util.Log;
-import android.view.MenuItem;
 import android.view.View;
 import android.widget.EditText;
 
 import com.dd.processbutton.iml.ActionProcessButton;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
 import java.net.Socket;
 
-/**
- * Created by Marib on 4/19/2016.
- */
-public class InputAddressAndPort extends AppCompatActivity {
+public class InputActivity extends AppCompatActivity {
 
     ActionProcessButton btnSignIn;
-    EditText IP_Address,Port_Number;
+    EditText IP_Address, Port_Number;
 
     @Override
-    protected void onCreate(@Nullable Bundle savedInstanceState) {
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.input_address_and_port);
+        setContentView(R.layout.activity_input);
+
         btnSignIn = (ActionProcessButton) findViewById(R.id.btnConnect);
         btnSignIn.setMode(ActionProcessButton.Mode.ENDLESS);
         btnSignIn.setProgress(0);
 
         IP_Address = (EditText) findViewById(R.id.IP_Address);
-        Port_Number= (EditText) findViewById(R.id.Port_Number);
-    }
-
-
-
-    @Override
-    public void onBackPressed() {
-        super.onBackPressed();
-
+        Port_Number = (EditText) findViewById(R.id.Port_Number);
     }
 
     @Override
@@ -60,28 +41,31 @@ public class InputAddressAndPort extends AppCompatActivity {
                 String ip_address = String.valueOf(IP_Address.getText());
                 int port;
 
-                if(String.valueOf(Port_Number.getText()).equals("")){
+                if (String.valueOf(Port_Number.getText()).equals("")) {
                     port = 0;
                 } else {
                     port = Integer.parseInt(String.valueOf(Port_Number.getText()));
                 }
 
-                Log.i("IP = ",""+ip_address);
-                Log.i("Port = ", ""+port);
-                EstablishConnection ec = new EstablishConnection(ip_address,port);
+                Log.i("IP = ", "" + ip_address);
+                Log.i("Port = ", "" + port);
+                EstablishConnection ec = new EstablishConnection(ip_address, port);
                 ec.execute();
-
             }
         });
+    }
 
-    }//onResume
-
-    public class EstablishConnection extends AsyncTask{
+    public class EstablishConnection extends AsyncTask {
 
         String ip;
         int port;
-        Socket socket;
-        EstablishConnection(String ip,int port){this.ip = ip; this.port = port;}
+        Socket cursorSocket, leftClickSocket, rightClickSocket, swipeSocket, calibrationSocket;
+
+        EstablishConnection(String ip, int port) {
+            this.ip = ip;
+            this.port = port;
+        }
+
         boolean success = false;
 
         @Override
@@ -89,18 +73,29 @@ public class InputAddressAndPort extends AppCompatActivity {
 
             try {
 
-                socket = new Socket(ip, port);
+                cursorSocket = new Socket(ip, port);
+                leftClickSocket = new Socket(ip, port + 1);
+                rightClickSocket = new Socket(ip, port + 2);
+                swipeSocket = new Socket(ip, port + 3);
+                calibrationSocket = new Socket(ip, port + 4);
+
                 success = true;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
 
-                        for(int i=0;i<101;i++){
+                        for (int i = 0; i < 101; i++) {
                             btnSignIn.setProgress(i);
                         }//for loop
 
-                        Intent i = new Intent(getApplicationContext(),ChoseSensor.class);
-                        SocketHandler.setSocket(socket);
+                        SocketHandler.setCursorSocket(cursorSocket);
+                        SocketHandler.setLeftClickSocket(leftClickSocket);
+                        SocketHandler.setRightClickSocket(rightClickSocket);
+                        SocketHandler.setSwipeSocket(swipeSocket);
+                        SocketHandler.setCalibrationSocket(calibrationSocket);
+
+                        Intent i = new Intent(getApplicationContext(), UserCalibrationActivity.class);
+
                         startActivity(i);
                     }
                 });
@@ -127,14 +122,10 @@ public class InputAddressAndPort extends AppCompatActivity {
                         btnSignIn.setProgress(0);
                     }
                 });
-
                 e.printStackTrace();
             }//Catch
 
-
             return null;
         }//doInBackGround
-
     }
-
-}//Class
+}
